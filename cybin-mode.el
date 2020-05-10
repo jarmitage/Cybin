@@ -287,6 +287,7 @@ Should be a list of strings."
             '(("C-b" . cybin-send-buffer)
               ("C-e" . cybin-send-paragraph)
               ("C-c" . cybin-send-current-line)
+              ("C-q" . cybin-kill-process)
               ("C-f" . cybin-search-documentation)))
       result-map))
   "Keymap that is used to define keys accessible by `cybin-prefix-key'.
@@ -308,6 +309,7 @@ If the latter is nil, the keymap translates into `cybin-mode-map' verbatim.")
                 #'cybin-electric-match))
             cybin--electric-indent-chars))
     (define-key result-map [menu-bar cybin-mode] (cons "Cybin" cybin-mode-menu))
+    (define-key result-map (kbd "<C-return>") 'cybin-send-paragraph)
 
     ;; FIXME: see if the declared logic actually works
     ;; handle prefix-keyed bindings:
