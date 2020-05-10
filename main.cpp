@@ -1,3 +1,4 @@
+#include <Bela.h>
 #include <lua.hpp>
 #include <stdlib.h>
 #include <stdio.h>
@@ -38,6 +39,9 @@ void parse_args(int argc, char** argv){
   Config.offline=false;
 #else
   Config.offline=true;
+#endif
+#ifdef BELA
+  Config.offline=false;
 #endif
   Config.list_devices=false;
   Config.set_device=-1;
@@ -143,6 +147,18 @@ void* input_handler(void* data){
     }
   }
 }
+void bela_interrupt_handler(int){ gShouldStop = 1; }
+bool bela_setup(BelaContext *context, void *userData){
+  Interpreter::LoadNumber("samplerate",context->audioSampleRate);
+  Interpreter::LoadNumber("channels", Config.channels);
+  if(Config.loadfile!=NULL) Interpreter::LoadFile(Config.loadfile);
+  return true;
+};
+void bela_render(BelaContext *context, void *userData){
+  // float__process(double time,int numInChannels,int numOutChannels){
+  // return Interpreter::Process(time,numInChannels,numOutChannels);
+};
+void bela_cleanup(BelaContext *context, void *userData){};
 int main(int argc, char** argv){
   // --- Start Lua --- //
   Interpreter::Init();
@@ -204,6 +220,52 @@ int main(int argc, char** argv){
     }
     // --- Shutdown  --- //
     JackAudio::getInstance()->Shutdown();
+#endif
+#ifdef BELA
+    // Set default settings
+    BelaInitSettings* settings = Bela_InitSettings_alloc();
+    Bela_defaultSettings(settings);
+    settings->setup = bela_setup;
+    settings->render = bela_render;
+    settings->cleanup = bela_cleanup;
+
+    // Initialise the PRU audio device
+    if(Bela_initAudio(settings, 0) != 0) {
+      Bela_InitSettings_free(settings);
+      fprintf(stderr,"Error: unable to initialise audio\n");
+      return 1;
+    }
+    Bela_InitSettings_free(settings);
+    printf("Bela: Bela_initAudio() complete\n");
+
+    // Start the audio device running
+    if(Bela_startAudio()) {
+      fprintf(stderr,"Error: unable to start real-time audio\n"); 
+      Bela_stopAudio(); // Stop the audio device
+      Bela_cleanupAudio(); // Clean up audio resources
+      return 1;
+    }
+    printf("Bela: Bela_startAudio() complete\n");
+
+    // Set up interrupt handler to catch Control-C and SIGTERM
+    signal(SIGINT, bela_interrupt_handler);
+    signal(SIGTERM, bela_interrupt_handler);
+    // --- Handle REPL event loop --- //
+    SharedInput Input;
+    pthread_t input_handler_thread;
+    pthread_create(&input_handler_thread,NULL,input_handler,(void*)&Input);
+    while(!gShouldStop) {
+      if(Input.dirty){
+        Interpreter::EventLoop(Input.COMMAND_BUFFER);
+        Input.dirty=false;
+        DEBUG("BUFFER CLEAN!");
+      }
+      usleep(100000); 
+    } 
+    Bela_stopAudio(); // Stop the audio device
+    printf("Bela: Bela_stopAudio() complete\n");
+    Bela_cleanupAudio(); // Clean up audio resources
+    printf("Bela: Bela_cleanupAudio() complete\n");
 #endif
   }
   Interpreter::Shutdown();
